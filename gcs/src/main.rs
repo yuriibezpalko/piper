@@ -1,7 +1,6 @@
 // gcs/src/main.rs
 mod state;
 mod telemetry;
-mod video;
 mod gamepad;
 mod web;
 mod traccar;
@@ -28,7 +27,6 @@ async fn main() {
     let state = Arc::new(AppState::new(config.cell_count));
 
     let (telem_tx, _) = broadcast::channel::<String>(64);
-    let (video_tx, _) = broadcast::channel::<bytes::Bytes>(32);
 
     // Telemetry UDP receiver
     {
@@ -36,14 +34,6 @@ async fn main() {
         let tx    = telem_tx.clone();
         tokio::spawn(async move {
             telemetry::run(state, tx, config.telem_port).await;
-        });
-    }
-
-    // Video UDP receiver
-    {
-        let tx = video_tx.clone();
-        tokio::spawn(async move {
-            video::run(tx, config.video_port).await;
         });
     }
 
@@ -69,7 +59,7 @@ async fn main() {
 
     // Run web server — exit cleanly on Ctrl+C or SIGTERM
     tokio::select! {
-        _ = web::run(state, telem_tx, video_tx, config.web_port) => {
+        _ = web::run(state, telem_tx, config.web_port) => {
             log::warn!("Web server exited unexpectedly");
         },
         _ = tokio::signal::ctrl_c() => {
@@ -86,7 +76,6 @@ pub struct Config {
     pub drone_ip:    String,
     pub rc_port:     u16,
     pub telem_port:  u16,
-    pub video_port:  u16,
     pub web_port:    u16,
     pub cell_count:  u8,    // 0 = auto-detect from voltage
     pub traccar_url: Option<String>,
@@ -101,8 +90,6 @@ impl Config {
                              .and_then(|s| s.parse().ok()).unwrap_or(2223),
             telem_port:  std::env::var("TELEM_PORT").ok()
                              .and_then(|s| s.parse().ok()).unwrap_or(2224),
-            video_port:  std::env::var("VIDEO_PORT").ok()
-                             .and_then(|s| s.parse().ok()).unwrap_or(5600),
             web_port:    std::env::var("WEB_PORT").ok()
                              .and_then(|s| s.parse().ok()).unwrap_or(8080),
             cell_count:  std::env::var("CELL_COUNT").ok()

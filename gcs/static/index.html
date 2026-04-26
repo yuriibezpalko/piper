@@ -51,31 +51,17 @@
     overflow: hidden;
   }
 
-  /* ── Video + OSD pane ── */
-  #video-pane {
+  /* ── OSD pane ── */
+  #osd-pane {
     position: relative;
     background: #000;
     overflow: hidden;
-  }
-  #video-canvas {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    display: block;
   }
   #osd-canvas {
     position: absolute;
     top: 0; left: 0;
     width: 100%; height: 100%;
     pointer-events: none;
-  }
-  #no-video {
-    position: absolute;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    color: #333;
-    font-size: 18px;
-    text-align: center;
   }
 
   /* ── Right panel ── */
@@ -153,11 +139,9 @@
 <!-- Main -->
 <div id="main">
 
-  <!-- Video + OSD -->
-  <div id="video-pane">
-    <canvas id="video-canvas"></canvas>
+  <!-- OSD -->
+  <div id="osd-pane">
     <canvas id="osd-canvas"></canvas>
-    <div id="no-video">📡 Waiting for video stream…</div>
     <canvas id="fs-overlay"></canvas>
   </div>
 
@@ -288,41 +272,16 @@ const osdCanvas = document.getElementById('osd-canvas');
 const osdCtx    = osdCanvas.getContext('2d');
 
 function resizeOsd() {
-  const pane = document.getElementById('video-pane');
+  const pane = document.getElementById('osd-pane');
   osdCanvas.width  = pane.clientWidth;
   osdCanvas.height = pane.clientHeight;
 }
 window.addEventListener('resize', resizeOsd);
 resizeOsd();
 
-// ── Video rect calculation ────────────────────────────
-// Computes the actual rendered video area inside the pane,
-// accounting for letterbox (black bars top/bottom) or
-// pillarbox (black bars left/right) from object-fit:contain.
-//
-// Returns { x, y, w, h } — the pixel rect of the video image
-// within the OSD canvas coordinate space.
-//
-// When no video has been decoded yet, videoCanvas.width/height
-// are 0 — fall back to full pane so OSD is still visible.
-
-function getVideoRect() {
-  const paneW = osdCanvas.width;
-  const paneH = osdCanvas.height;
-
-  const vidW = videoCanvas.width  || paneW;
-  const vidH = videoCanvas.height || paneH;
-
-  // Scale to fit pane while preserving aspect ratio (object-fit: contain)
-  const scale = Math.min(paneW / vidW, paneH / vidH);
-  const drawW = vidW * scale;
-  const drawH = vidH * scale;
-
-  // Centre in pane (letterbox / pillarbox offset)
-  const x = (paneW - drawW) / 2;
-  const y = (paneH - drawH) / 2;
-
-  return { x, y, w: drawW, h: drawH };
+// OSD rect — the full pane
+function getOsdRect() {
+  return { x: 0, y: 0, w: osdCanvas.width, h: osdCanvas.height };
 }
 
 // ── Shared draw helpers ───────────────────────────────
@@ -352,18 +311,15 @@ function drawOsd() {
   const paneH = osdCanvas.height;
   osdCtx.clearRect(0, 0, paneW, paneH);
 
-  // All OSD coordinates are relative to the video rect, not the pane.
-  // This ensures nothing draws on black bars.
-  const vr = getVideoRect();   // { x, y, w, h }
+  const vr = getOsdRect();
   const W  = vr.w;
   const H  = vr.h;
-  const cx = vr.x + W / 2;    // centre x in pane coords
-  const cy = vr.y + H / 2;    // centre y in pane coords
+  const cx = vr.x + W / 2;
+  const cy = vr.y + H / 2;
 
   const t = Date.now();
   const s = state;
 
-  // Clip strictly to video rect — nothing escapes into black bars
   osdCtx.save();
   osdCtx.beginPath();
   osdCtx.rect(vr.x, vr.y, W, H);
@@ -390,7 +346,7 @@ function drawOsd() {
 
   osdCtx.restore();
 
-  // ── Failsafe pulse border — follows video rect edge ──
+  // ── Failsafe pulse border ──
   if (s.failsafe) {
     const alpha = 0.4 + 0.35 * Math.sin(t / 250);
     osdCtx.strokeStyle = `rgba(255,80,0,${alpha})`;
@@ -945,263 +901,6 @@ function connectTelemetry() {
 }
 connectTelemetry();
 
-// ═══════════════════════════════════════════════════════
-// WEBSOCKET — VIDEO (H.265 via WebCodecs)
-// ═══════════════════════════════════════════════════════
-const videoCanvas = document.getElementById('video-canvas');
-const videoCtx    = videoCanvas.getContext('2d');
-const noVideo     = document.getElementById('no-video');
-
-let decoder     = null;
-let decoderReady = false;
-
-// Parameter sets collected from stream
-let vps = null, sps = null, pps = null;
-
-function nalType(byte0) {
-  return (byte0 >> 1) & 0x3F;
-}
-
-// Build hvcC description from VPS/SPS/PPS for WebCodecs
-function buildHvcC(vps, sps, pps) {
-  // Minimal hvcC box content for WebCodecs description field
-  // Format: array of NAL arrays, each prefixed with 4-byte length
-  const arrays = [
-    { type: 32, nalus: [vps] },  // VPS
-    { type: 33, nalus: [sps] },  // SPS
-    { type: 34, nalus: [pps] },  // PPS
-  ];
-
-  let totalLen = 23; // hvcC header
-  for (const arr of arrays) {
-    totalLen += 3; // array completeness + nal_unit_type + num_nalus
-    for (const n of arr.nalus) totalLen += 2 + n.length;
-  }
-
-  const buf = new Uint8Array(totalLen);
-  const dv  = new DataView(buf.buffer);
-  let off = 0;
-
-  buf[off++] = 1;          // configurationVersion
-  buf[off++] = sps[1];     // general_profile_space/tier/idc
-  buf[off++] = sps[2];     // general_profile_compatibility
-  buf[off++] = sps[3];
-  buf[off++] = sps[4];
-  buf[off++] = sps[5];
-  // general_constraint_indicator_flags (6 bytes)
-  buf[off++] = 0; buf[off++] = 0; buf[off++] = 0;
-  buf[off++] = 0; buf[off++] = 0; buf[off++] = 0;
-  buf[off++] = sps[6] || 0x5D; // general_level_idc (L93 = 0x5D)
-  dv.setUint16(off, 0xF000); off += 2; // min_spatial_segmentation_idc
-  buf[off++] = 0xFC;       // parallelismType
-  buf[off++] = 0xFD;       // chroma_format_idc (4:2:0)
-  buf[off++] = 0xF8;       // bit_depth_luma_minus8
-  buf[off++] = 0xF8;       // bit_depth_chroma_minus8
-  dv.setUint16(off, 0);  off += 2; // avgFrameRate
-  buf[off++] = 0x0F;       // constantFrameRate|numTemporalLayers|temporalIdNested|lengthSizeMinusOne
-  buf[off++] = arrays.length; // numOfArrays
-
-  for (const arr of arrays) {
-    buf[off++] = 0x80 | arr.type; // array_completeness + NAL type
-    dv.setUint16(off, arr.nalus.length); off += 2;
-    for (const n of arr.nalus) {
-      dv.setUint16(off, n.length); off += 2;
-      buf.set(n, off); off += n.length;
-    }
-  }
-
-  return buf.slice(0, off);
-}
-
-async function configureDecoder() {
-  if (!vps || !sps || !pps) return;
-  if (decoderReady) return; // already configured, don't reset
-  if (!('VideoDecoder' in window)) return;
-
-  console.log('Configuring H.265 decoder...');
-
-  if (decoder && decoder.state !== 'closed') {
-    try { decoder.reset(); } catch(_) {}
-  }
-
-  decoder = new VideoDecoder({
-    output: (frame) => {
-      noVideo.style.display = 'none';
-      videoCanvas.width  = frame.displayWidth;
-      videoCanvas.height = frame.displayHeight;
-      videoCtx.drawImage(frame, 0, 0);
-      frame.close();
-    },
-    error: (e) => {
-      if (decoder.state === 'closed') {
-        decoderReady = false;
-        setTimeout(() => configureDecoder(), 500);
-      }
-    }
-  });
-
-  const cfgs = [
-    { codec: 'hev1.1.6.L93.B0',  hardwareAcceleration: 'prefer-hardware', optimizeForLatency: true },
-    { codec: 'hev1.1.6.L120.B0', hardwareAcceleration: 'prefer-hardware', optimizeForLatency: true },
-    { codec: 'hev1.1.6.L150.B0', hardwareAcceleration: 'prefer-hardware', optimizeForLatency: true },
-    { codec: 'hev1.1.6.L93.B0',  hardwareAcceleration: 'prefer-software', optimizeForLatency: true },
-  ];
-
-  for (const cfg of cfgs) {
-    try {
-      const check = await VideoDecoder.isConfigSupported(cfg);
-      if (!check.supported) continue;
-      await decoder.configure(cfg);
-      decoderReady = true;
-      console.log('Decoder ready:', cfg.codec);
-      return;
-    } catch(e) {
-      console.warn('Configure failed:', cfg.codec, e.message);
-    }
-  }
-  console.error('H.265 not supported');
-  noVideo.textContent = '⚠ H.265 not supported';
-}
-
-// Check support once on load
-(async () => {
-  if (!('VideoDecoder' in window)) {
-    noVideo.textContent = '⚠ WebCodecs not supported — use Chrome';
-    return;
-  }
-  const s = await VideoDecoder.isConfigSupported({ codec: 'hev1.1.6.L93.B0' });
-  if (!s.supported) {
-    noVideo.textContent = '⚠ H.265 not supported in this Chrome/OS';
-  } else {
-    console.log('H.265 WebCodecs supported');
-  }
-})();
-
-function annexBWrap(nal) {
-  const out = new Uint8Array(4 + nal.length);
-  out[0] = 0; out[1] = 0; out[2] = 0; out[3] = 1;
-  out.set(nal, 4);
-  return out;
-}
-
-function processNal(nalData, isKeyHint) {
-  if (!decoderReady || !decoder || decoder.state === 'closed') return;
-
-  const nt = nalType(nalData[0]);
-  const isIDR = nt >= 16 && nt <= 23;
-  const isKey = isIDR || isKeyHint;
-
-  let payload;
-  if (isIDR && vps && sps && pps) {
-    const v = annexBWrap(vps);
-    const s = annexBWrap(sps);
-    const p = annexBWrap(pps);
-    const n = annexBWrap(nalData);
-    payload = new Uint8Array(v.length + s.length + p.length + n.length);
-    let off = 0;
-    payload.set(v, off); off += v.length;
-    payload.set(s, off); off += s.length;
-    payload.set(p, off); off += p.length;
-    payload.set(n, off);
-  } else {
-    payload = annexBWrap(nalData);
-  }
-
-  try {
-    decoder.decode(new EncodedVideoChunk({
-      type: isKey ? 'key' : 'delta',
-      timestamp: performance.now() * 1000,
-      data: payload,
-    }));
-  } catch(e) {
-    // Silently drop — decoder recovers on next keyframe
-  }
-}
-
-function connectVideo() {
-  const ws = new WebSocket(`ws://${location.host}/ws/video`);
-  ws.binaryType = 'arraybuffer';
-
-  let lastFrameTime = performance.now();
-  let fuBuffer = null;
-  let fuNalType = 0;
-  let fuStartTime = 0;
-
-  // Watchdog: if no decoded frame for 3 seconds, reset decoder to force keyframe request
-  const watchdog = setInterval(() => {
-    if (performance.now() - lastFrameTime > 3000 && decoderReady) {
-      console.log('Video watchdog: no frames for 3s, flushing decoder');
-      fuBuffer = null; // discard stale FU-A buffer
-      try { decoder.flush(); } catch(_) {}
-    }
-  }, 3000);
-
-  ws.onmessage = (ev) => {
-    const data = new Uint8Array(ev.data);
-    if (data.length < 2) return;
-
-    const nt = nalType(data[0]);
-
-    // Parameter sets
-    if (nt === 32) { vps = data.slice(); return; }
-    if (nt === 33) { sps = data.slice(); return; }
-    if (nt === 34) {
-      pps = data.slice();
-      if (!decoderReady) configureDecoder();
-      return;
-    }
-
-    // FU-A reassembly (nalType 49)
-    if (nt === 49) {
-      const fuHeader = data[2];
-      const startBit = (fuHeader >> 7) & 1;
-      const endBit   = (fuHeader >> 6) & 1;
-      const fuType   = fuHeader & 0x3F;
-
-      if (startBit) {
-        // Discard stale buffer if previous FU-A never completed
-        const origNalHdr0 = (data[0] & 0x81) | (fuType << 1);
-        const origNalHdr1 = data[1];
-        fuBuffer = new Uint8Array(2 + data.length - 3);
-        fuBuffer[0] = origNalHdr0;
-        fuBuffer[1] = origNalHdr1;
-        fuBuffer.set(data.slice(3), 2);
-        fuNalType = fuType;
-        fuStartTime = performance.now();
-      } else if (fuBuffer) {
-        // Discard if fragment is too old (>500ms = lost end packet)
-        if (performance.now() - fuStartTime > 500) {
-          fuBuffer = null;
-          return;
-        }
-        const prev = fuBuffer;
-        fuBuffer = new Uint8Array(prev.length + data.length - 3);
-        fuBuffer.set(prev, 0);
-        fuBuffer.set(data.slice(3), prev.length);
-
-        if (endBit) {
-          const nal = fuBuffer;
-          fuBuffer = null;
-          lastFrameTime = performance.now();
-          processNal(nal, fuNalType >= 16 && fuNalType <= 23);
-        }
-      }
-      return;
-    }
-
-    // Regular NAL unit
-    lastFrameTime = performance.now();
-    processNal(data, false);
-  };
-
-  ws.onclose = ws.onerror = () => {
-    clearInterval(watchdog);
-    fuBuffer = null;
-    decoderReady = false;
-    setTimeout(connectVideo, 2000);
-  };
-}
-connectVideo();
 </script>
 </body>
 </html>

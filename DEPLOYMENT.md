@@ -9,14 +9,13 @@
 ```
 Gamepad → GCS (CRSF/UDP) → WireGuard VPS → OpenIPC camera → UART → ArduPilot FC
 ArduPilot FC → UART → OpenIPC camera → WireGuard VPS → GCS → Browser OSD
-Majestic H.265 → UDP → WireGuard VPS → GCS → WebSocket → Browser
 ```
 
 | Component | Description |
 |---|---|
 | `skypulse-drone` | C++ binary on OpenIPC SSC30KQ — CRSF/UART bridge + failsafe FSM |
 | `skypulse-gcs` | Rust binary on laptop — SDL2 gamepad + Axum web server |
-| Browser UI | `index.html` — H.265 WebCodecs + Canvas OSD + Leaflet GPS map |
+| Browser UI | `index.html` — Canvas OSD + Leaflet GPS map |
 | `crsf-proto` | Rust library — CRSF encode/decode |
 | WireGuard | VPN mesh: camera `10.0.0.1` ↔ VPS `10.0.0.254` ↔ GCS `10.0.0.2` |
 
@@ -30,7 +29,7 @@ Majestic H.265 → UDP → WireGuard VPS → GCS → WebSocket → Browser
 - VPS with public IP for WireGuard relay
 - Starlink or 4G on drone side
 - Xbox / PlayStation / RC USB controller on GCS
-- GCS machine: Linux, macOS, or Windows + Chrome
+- GCS machine: Linux, macOS, or Windows
 
 **GCS machine**
 - Rust: https://rustup.rs
@@ -137,39 +136,9 @@ ssh root@10.0.0.1 chmod +x /etc/init.d/S97skypulse /etc/rc.local
 
 Then edit `/etc/wireguard.conf` on the camera and fill in your actual keys.
 
-> **Important:** `rc.local` waits for WireGuard to connect before restarting Majestic. This ensures video streams to the correct GCS IP. Do not skip this file.
-
 ---
 
-## 5. Majestic Video Config
-
-Edit `/etc/majestic.yaml` on the camera:
-
-```yaml
-video0:
-  enabled: true
-  codec: h265
-  size: 1280x720
-  fps: 30
-  bitrate: 2048      # kbps
-  gopSize: 1         # keyframe every second — REQUIRED for WebCodecs
-  rcMode: cbr
-
-outgoing:
-  enabled: true
-  url: rtp://10.0.0.2:5600   # GCS WireGuard IP
-  codec: h265
-```
-
-```bash
-killall -1 majestic
-```
-
-> **`gopSize: 1` is critical.** Without it Chrome's WebCodecs decoder may wait 10+ seconds for the first keyframe before showing video.
-
----
-
-## 6. ArduPilot Parameters
+## 5. ArduPilot Parameters
 
 Set in Mission Planner or QGroundControl. Adjust `SERIAL1` to whichever port is wired to the camera.
 
@@ -191,7 +160,7 @@ ArduPilot automatically sends CRSF telemetry (GPS, battery, attitude, flight mod
 
 ---
 
-## 7. Build & Run GCS
+## 6. Build & Run GCS
 
 ### Install SDL2
 ```bash
@@ -226,7 +195,6 @@ DRONE_IP=10.8.0.2 ./target/release/skypulse-gcs
 DRONE_IP=10.8.0.2  \
 RC_PORT=2223        \
 TELEM_PORT=2224     \
-VIDEO_PORT=5600     \
 WEB_PORT=8080       \
 CELL_COUNT=4        \   # optional: set battery cell count (0 = auto-detect)
 TRACCAR_URL=http://your-traccar.com:8082  \  # optional: enable GPS tracking
@@ -239,11 +207,9 @@ TRACCAR_ID=skypulse-1  \                     # optional: device ID in Traccar
 http://localhost:8080
 ```
 
-> **Must use Chrome or Edge.** Firefox does not support H.265 in the WebCodecs API.
-
 ---
 
-## 8. Verification
+## 7. Verification
 
 ```bash
 # 1. WireGuard mesh
@@ -253,24 +219,16 @@ ping 10.0.0.254  # VPS reachable
 # 2. Telemetry flowing (should see CRSF bytes: C8 xx xx ...)
 nc -ul 2224 | xxd | head -5
 
-# 3. Video arriving
-sudo tcpdump -i wg0 udp port 5600 -c 5
-
-# 4. RC reaching camera (run on camera, move gamepad)
+# 3. RC reaching camera (run on camera, move gamepad)
 nc -ul 2223 | xxd | head -3
 
-# 5. Drone binary running on camera
+# 4. Drone binary running on camera
 ssh root@10.0.0.1 'ps | grep skypulse'
-```
-
-In Chrome DevTools console on `localhost:8080` you should see:
-```
-H.265 decoder ready
 ```
 
 ---
 
-## 9. Failsafe Behaviour
+## 8. Failsafe Behaviour
 
 | Gap since last RC packet | State | What happens |
 |---|---|---|
@@ -281,14 +239,7 @@ H.265 decoder ready
 
 ---
 
-## 10. Troubleshooting
-
-**No video in browser**
-- Check Majestic running: `ssh root@10.0.0.1 'ps | grep majestic'`
-- Verify `gopSize: 1` in majestic.yaml
-- Check UDP arriving: `tcpdump -i wg0 udp port 5600`
-- Must use Chrome/Edge, not Firefox
-- Check DevTools console for WebCodecs errors
+## 9. Troubleshooting
 
 **No telemetry / OSD blank**
 - Check skypulse-drone running: `ssh root@10.0.0.1 'ps | grep skypulse'`
@@ -313,21 +264,19 @@ H.265 decoder ready
 
 ---
 
-## 11. Port Reference
+## 10. Port Reference
 
 | Port | Direction | Purpose |
 |---|---|---|
 | UDP 2223 | GCS → camera | RC control — CRSF frames |
 | UDP 2224 | camera → GCS | Telemetry — CRSF frames |
-| UDP 5600 | camera → GCS | Video — H.265 RTP |
 | TCP 8080 | localhost | Web UI — browser interface |
 | UDP 51820 | VPS | WireGuard relay (must be open in firewall) |
 | WS `/ws/telemetry` | GCS → browser | JSON telemetry stream |
-| WS `/ws/video` | GCS → browser | Binary H.265 NAL units |
 
 ---
 
-## 12. SSC30KQ UART Notes
+## 11. SSC30KQ UART Notes
 
 The FC RCIN connection is on `/dev/ttyS3` at 420000 baud.
 

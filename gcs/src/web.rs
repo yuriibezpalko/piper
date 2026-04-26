@@ -7,20 +7,17 @@ use axum::{
     routing::get,
 };
 use tokio::sync::broadcast;
-use bytes::Bytes;
 use crate::state::AppState;
 
 #[derive(Clone)]
 struct WsState {
     app:   Arc<AppState>,
     telem: broadcast::Sender<String>,
-    video: broadcast::Sender<Bytes>,
 }
 
 pub async fn run(
     app:      Arc<AppState>,
     telem_tx: broadcast::Sender<String>,
-    video_tx: broadcast::Sender<Bytes>,
     port:     u16,
 ) {
     // Raise file descriptor limit — macOS default is 256 which is too low
@@ -36,12 +33,11 @@ pub async fn run(
         }
     }
 
-    let ws_state = WsState { app, telem: telem_tx, video: video_tx };
+    let ws_state = WsState { app, telem: telem_tx };
 
     let router = Router::new()
         .route("/",             get(serve_index))
         .route("/ws/telemetry", get(ws_telemetry))
-        .route("/ws/video",     get(ws_video))
         .with_state(ws_state);
 
     let addr = format!("0.0.0.0:{}", port);
@@ -72,28 +68,6 @@ async fn handle_telem_ws(mut socket: WebSocket, s: WsState) {
             }
             Err(broadcast::error::RecvError::Lagged(n)) => {
                 log::warn!("telem WS lagged {}", n);
-            }
-            Err(_) => break,
-        }
-    }
-    let _ = socket.close().await;
-}
-
-async fn ws_video(ws: WebSocketUpgrade, State(s): State<WsState>) -> Response {
-    ws.on_upgrade(move |socket| handle_video_ws(socket, s))
-}
-
-async fn handle_video_ws(mut socket: WebSocket, s: WsState) {
-    let mut rx = s.video.subscribe();
-    loop {
-        match rx.recv().await {
-            Ok(nal) => {
-                if socket.send(Message::Binary(nal.to_vec().into())).await.is_err() {
-                    break;
-                }
-            }
-            Err(broadcast::error::RecvError::Lagged(n)) => {
-                log::warn!("video WS lagged {}", n);
             }
             Err(_) => break,
         }

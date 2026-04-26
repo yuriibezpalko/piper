@@ -1267,7 +1267,6 @@ name = "skypulse-gcs"
 version = "0.1.0"
 dependencies = [
  "axum",
- "bytes",
  "crsf-proto",
  "env_logger",
  "futures",
