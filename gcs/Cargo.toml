@@ -1,0 +1,18 @@
+[package]
+name    = "skypulse-gcs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+crsf-proto = { path = "../crsf-proto" }
+tokio      = { workspace = true }
+axum       = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+log        = { workspace = true }
+env_logger = { workspace = true }
+futures    = "0.3"
+bytes      = "1"
+libc       = "0.2"
+reqwest    = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+sdl2       = { version = "0.35", default-features = false, features = ["use-pkgconfig"] }

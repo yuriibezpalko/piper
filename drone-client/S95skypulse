@@ -1,0 +1,43 @@
+#!/bin/sh
+# /etc/init.d/S95skypulse
+# OpenIPC init script for skypulse-drone
+
+NAME="skypulse-drone"
+DAEMON="/usr/bin/skypulse-drone"
+CONFIG="/etc/skypulse.conf"
+PIDFILE="/var/run/skypulse-drone.pid"
+
+start() {
+    echo -n "Starting $NAME: "
+    if [ ! -x "$DAEMON" ]; then
+        echo "MISSING — $DAEMON not found"
+        return 1
+    fi
+    # Wait for WireGuard to be up (wg0 must exist)
+    for i in $(seq 1 10); do
+        ip link show wg0 > /dev/null 2>&1 && break
+        echo "Waiting for wg0... ($i/10)"
+        sleep 2
+    done
+    start-stop-daemon -S -q -b -m -p $PIDFILE \
+        --exec $DAEMON -- $CONFIG
+    echo "OK"
+}
+
+stop() {
+    echo -n "Stopping $NAME: "
+    start-stop-daemon -K -q -p $PIDFILE
+    rm -f $PIDFILE
+    echo "OK"
+}
+
+restart() { stop; sleep 1; start; }
+
+case "$1" in
+    start)   start   ;;
+    stop)    stop    ;;
+    restart) restart ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+esac

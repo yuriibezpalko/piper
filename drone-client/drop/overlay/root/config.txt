@@ -1,0 +1,10 @@
+# skypulse-drone config (masina-compatible path)
+host=10.8.0.3
+LOCAL_TIMEOUT=300000
+FAILSAFE_TIMEOUT=5000
+STABILIZE_TIMEOUT=250
+ELRS_SWITCH_PIN=0
+control_port=2223
+caminfo_port=2224
+uart_dev=/dev/ttyS3
+uart_baud=420000

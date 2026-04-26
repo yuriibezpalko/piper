@@ -1,0 +1,33 @@
+#!/bin/sh
+DAEMON="/usr/bin/skypulse-drone"
+PIDFILE="/var/run/skypulse-drone.pid"
+CONFIG="/etc/skypulse.conf"
+
+start() {
+    # CRITICAL: disable serial console on ttyS3 so skypulse-drone can use it
+    # OpenIPC may have a getty or console running on this port
+    if grep -q "ttyS3" /etc/inittab 2>/dev/null; then
+        sed -i 's/.*ttyS3.*/#&/' /etc/inittab
+        echo "S97skypulse: disabled ttyS3 console in /etc/inittab"
+    fi
+    # Kill any existing getty on ttyS3
+    kill $(fuser /dev/ttyS3 2>/dev/null) 2>/dev/null || true
+
+    ulimit -c unlimited
+    echo "/tmp/core.skypulse" > /proc/sys/kernel/core_pattern
+    echo -n "Starting skypulse-drone: "
+    start-stop-daemon -b -m -S -q -p "$PIDFILE" -x "$DAEMON" -- $CONFIG
+    [ $? -eq 0 ] && echo "OK" || echo "FAIL"
+}
+
+stop() {
+    echo -n "Stopping skypulse-drone: "
+    start-stop-daemon -K -q -p "$PIDFILE"
+    [ $? -eq 0 ] && { rm -f "$PIDFILE"; echo "OK"; } || echo "FAIL"
+}
+
+case "$1" in
+    start|stop) $1 ;;
+    restart|reload) stop; sleep 2; start ;;
+    *) echo "Usage: $0 {start|stop|restart}"; exit 1 ;;
+esac

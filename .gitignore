@@ -1,0 +1,18 @@
+# Rust build artifacts
+/target
+**/target/
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# Local env / secrets
+.env
+*.local
+
+# Drone-client build output
+drone-client/build/
+drone-client/*.o
