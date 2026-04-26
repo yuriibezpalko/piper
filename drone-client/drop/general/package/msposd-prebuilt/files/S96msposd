@@ -1,0 +1,35 @@
+#!/bin/sh
+# /etc/init.d/S96msposd — OpenIPC OSD daemon
+# Reads /etc/msposd.conf for arguments.
+
+DAEMON="/usr/bin/msposd"
+PIDFILE="/var/run/msposd.pid"
+CONFIG="/etc/msposd.conf"
+
+# Defaults — overridden by /etc/msposd.conf
+MASTER="/dev/ttyS2"
+BAUD=115200
+OSD_OPTS="-c 7 -c 9 --osd -r 20 --ahi 1"
+
+[ -r "$CONFIG" ] && . "$CONFIG"
+
+ARGS="--master $MASTER --baudrate $BAUD $OSD_OPTS"
+
+start() {
+    echo -n "Starting msposd: "
+    [ -x "$DAEMON" ] || { echo "MISSING"; return 1; }
+    start-stop-daemon -b -m -S -q -p "$PIDFILE" -x "$DAEMON" -- $ARGS
+    [ $? -eq 0 ] && echo "OK" || echo "FAIL"
+}
+
+stop() {
+    echo -n "Stopping msposd: "
+    start-stop-daemon -K -q -p "$PIDFILE"
+    [ $? -eq 0 ] && { rm -f "$PIDFILE"; echo "OK"; } || echo "FAIL"
+}
+
+case "$1" in
+    start|stop) $1 ;;
+    restart|reload) stop; sleep 1; start ;;
+    *) echo "Usage: $0 {start|stop|restart}"; exit 1 ;;
+esac

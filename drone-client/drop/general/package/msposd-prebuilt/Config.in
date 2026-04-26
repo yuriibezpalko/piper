@@ -1,0 +1,10 @@
+config BR2_PACKAGE_MSPOSD_PREBUILT
+	bool "msposd (prebuilt SigmaStar binary)"
+	help
+	  OpenIPC msposd — MAVLink/MSP OSD overlay daemon for Majestic.
+
+	  Pulls the latest prebuilt msposd_star6e binary and INAV fonts from
+	  https://github.com/OpenIPC/msposd/releases/download/latest/
+
+	  Provides /usr/bin/msposd, /usr/share/fonts/font.png and font_hd.png,
+	  /etc/init.d/S96msposd, and /etc/msposd.conf.

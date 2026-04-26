@@ -1,0 +1,6 @@
+# drop/Dockerfile uses drone-client/ as build context — keep it small.
+drop/.openipc
+drop/output
+build/
+*.o
+skypulse-drone

@@ -1,20 +1,29 @@
 #!/bin/sh
+# /etc/init.d/S97skypulse — start skypulse-drone after WireGuard is up
+
 DAEMON="/usr/bin/skypulse-drone"
 PIDFILE="/var/run/skypulse-drone.pid"
 CONFIG="/etc/skypulse.conf"
 
 start() {
-    # CRITICAL: disable serial console on ttyS3 so skypulse-drone can use it
-    # OpenIPC may have a getty or console running on this port
+    # Disable any serial console on the FC UART before grabbing it.
     if grep -q "ttyS3" /etc/inittab 2>/dev/null; then
         sed -i 's/.*ttyS3.*/#&/' /etc/inittab
-        echo "S97skypulse: disabled ttyS3 console in /etc/inittab"
+        kill -HUP 1 2>/dev/null
+        echo "S97skypulse: disabled ttyS3 console"
     fi
-    # Kill any existing getty on ttyS3
     kill $(fuser /dev/ttyS3 2>/dev/null) 2>/dev/null || true
+
+    # Wait for wg0 to exist (rc.local brings it up).
+    for i in $(seq 1 10); do
+        ip link show wg0 >/dev/null 2>&1 && break
+        echo "S97skypulse: waiting for wg0... ($i/10)"
+        sleep 2
+    done
 
     ulimit -c unlimited
     echo "/tmp/core.skypulse" > /proc/sys/kernel/core_pattern
+
     echo -n "Starting skypulse-drone: "
     start-stop-daemon -b -m -S -q -p "$PIDFILE" -x "$DAEMON" -- $CONFIG
     [ $? -eq 0 ] && echo "OK" || echo "FAIL"

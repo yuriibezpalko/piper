@@ -1,0 +1,8 @@
+config BR2_PACKAGE_SKYPULSE
+	bool "skypulse-drone"
+	help
+	  SkyPulse drone client — CRSF/UART bridge between ArduPilot FC and
+	  the GCS over WireGuard, with failsafe FSM (NORMAL → STABILIZE →
+	  FAILSAFE → LOCAL/ELRS).
+
+	  https://github.com/lvivdronehub/piper

@@ -16,3 +16,9 @@
 # Drone-client build output
 drone-client/build/
 drone-client/*.o
+drone-client/skypulse-drone
+
+# Firmware build artefacts
+drone-client/drop/.openipc/
+drone-client/drop/output/
+drone-client/drop/general/package/skypulse/files/main.cpp
