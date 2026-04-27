@@ -43,18 +43,14 @@ INVOKE = PWD=$(OPENIPC)
 endif
 
 all: stage
-	# defconfig downloads + extracts buildroot tarball into $(TARGET)/buildroot-*/
+	# defconfig downloads + extracts buildroot tarball into $(TARGET)/buildroot-*/.
+	# Our libffi/0005-... patch is picked up via BR2_GLOBAL_PATCH_DIR (set by
+	# openipc.fragment to general/package/all-patches/), where our drop placed
+	# it. Wipe any cached libffi build state so the patch re-applies on
+	# already-warmed cache restores.
 	@cd $(OPENIPC) && $(INVOKE) $(MAKE) TARGET=$(TARGET) \
 		$(if $(BOARD),BOARD=$(BOARD)) defconfig
-	# Inject our libffi patches directly into buildroot's package/libffi/
-	# (BR2_GLOBAL_PATCH_DIR proved unreliable in practice). Wipe libffi build
-	# state so extract + patch + configure re-runs with our patch applied.
-	@if [ -d $(TARGET)/buildroot-2024.02.10/package/libffi ]; then \
-		echo "--- injecting piper libffi patches into buildroot tree ---"; \
-		cp -fv $(CURDIR)/general/package/all-patches/libffi/*.patch \
-			$(TARGET)/buildroot-2024.02.10/package/libffi/; \
-		rm -rf $(TARGET)/build/libffi-3.4.4 $(TARGET)/build/host-libffi-3.4.4; \
-	fi
+	@rm -rf $(TARGET)/build/libffi-3.4.4 $(TARGET)/build/host-libffi-3.4.4
 	@cd $(OPENIPC) && $(INVOKE) $(MAKE) TARGET=$(TARGET) \
 		$(if $(BOARD),BOARD=$(BOARD)) br-toolchain
 	@cd $(OPENIPC) && $(INVOKE) $(MAKE) TARGET=$(TARGET) \
