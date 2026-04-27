@@ -43,6 +43,18 @@ INVOKE = PWD=$(OPENIPC)
 endif
 
 all: stage
+	# Run defconfig first — this downloads buildroot tarball into $(TARGET)/.
+	@cd $(OPENIPC) && $(INVOKE) $(MAKE) TARGET=$(TARGET) \
+		$(if $(BOARD),BOARD=$(BOARD)) defconfig
+	# libffi 3.4.4 (buildroot 2024.02 default) has a configure-script bug
+	# that breaks with absolute --enable-builddir paths. Bump to 3.4.6 which
+	# fixes it. Hash file emptied so buildroot skips hash check on download.
+	@if test -f $(TARGET)/buildroot-2024.02.10/package/libffi/libffi.mk; then \
+		echo "--- patching buildroot libffi 3.4.4 -> 3.4.6 ---"; \
+		sed -i 's/^LIBFFI_VERSION = .*/LIBFFI_VERSION = 3.4.6/' \
+			$(TARGET)/buildroot-2024.02.10/package/libffi/libffi.mk; \
+		: > $(TARGET)/buildroot-2024.02.10/package/libffi/libffi.hash; \
+	fi
 	@cd $(OPENIPC) && $(INVOKE) $(MAKE) TARGET=$(TARGET) \
 		$(if $(BOARD),BOARD=$(BOARD)) br-toolchain
 	@cd $(OPENIPC) && $(INVOKE) $(MAKE) TARGET=$(TARGET) \
