@@ -1,9 +1,10 @@
 From: piper firmware build <noreply@anthropic.com>
 Subject: [PATCH] configure: do not use $TARGET env as multi-builddir name
 
-libffi's configure auto-detects "multi-builddir" mode and reads $TARGET
-from the environment as the subdirectory name, falling back to $target
-(the autoconf target tuple) only if $TARGET is unset.
+libffi's configure (via the AX_ENABLE_BUILDDIR autoconf-archive macro)
+auto-detects "multi-builddir" mode and reads $TARGET from the environment
+as the subdirectory name, falling back to $target (the autoconf target
+tuple) only if $TARGET is unset.
 
 Buildroot's OpenIPC Makefile uses TARGET as a make variable
 (TARGET=/b/output) and GNU Make exports command-line variables to recipe
@@ -13,9 +14,12 @@ relative-path math, which fails with:
 
     /bin/bash: ../../.././configure: No such file or directory
 
-Force the multi-builddir name to always come from $target (the autoconf
-host triplet, e.g. "x86_64-pc-linux-gnu" or "arm-buildroot-linux-gnueabihf"),
-ignoring whatever happens to be in $TARGET env.
+This patch hits BOTH the generated configure script AND the m4 source
+that AX_ENABLE_BUILDDIR expands from. Buildroot's libffi package runs
+autoreconf, which regenerates configure from configure.ac + m4/, so
+patching only configure gets wiped — hence the dual hunk. The m4 patch
+is the canonical fix; the configure patch is a safety net in case
+autoreconf is skipped.
 
 Upstream: not submitted (libffi 3.4.6 changed this code path; this patch
 fixes 3.4.4 which is what buildroot 2024.02 ships).
@@ -31,3 +35,14 @@ fixes 3.4.4 which is what buildroot 2024.02 ships).
      test ".$ax_enable_builddir" = ".auto" && ax_enable_builddir="$TARGET"
      if test ".$ax_enable_builddir" != ".." ; then    # we know where to go and
        as_dir=$ax_enable_builddir; as_fn_mkdir_p
+--- a/m4/ax_enable_builddir.m4
++++ b/m4/ax_enable_builddir.m4
+@@ -101,7 +101,7 @@ AC_DEFUN([AX_ENABLE_BUILDDIR],[
+   else
+     test ".$SUB" = "."  && SUB="."
+     test ".$SUB" = ".no"  && SUB="."
+-    test ".$TARGET" = "." && TARGET="$target"
++    TARGET="$target"
+     test ".$SUB" = ".auto" && SUB="m4_ifval([$1], [$1],[$TARGET])"
+     if test ".$SUB" != ".." ; then    # we know where to go and
+       AS_MKDIR_P([$SUB])
