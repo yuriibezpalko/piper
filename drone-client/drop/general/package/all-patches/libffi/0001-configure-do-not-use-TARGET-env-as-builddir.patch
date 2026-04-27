@@ -1,0 +1,33 @@
+From: piper firmware build <noreply@anthropic.com>
+Subject: [PATCH] configure: do not use $TARGET env as multi-builddir name
+
+libffi's configure auto-detects "multi-builddir" mode and reads $TARGET
+from the environment as the subdirectory name, falling back to $target
+(the autoconf target tuple) only if $TARGET is unset.
+
+Buildroot's OpenIPC Makefile uses TARGET as a make variable
+(TARGET=/b/output) and GNU Make exports command-line variables to recipe
+subshells, so libffi configure sees TARGET=/b/output (an absolute path)
+and tries to mkdir/cd into it then re-exec configure with broken
+relative-path math, which fails with:
+
+    /bin/bash: ../../.././configure: No such file or directory
+
+Force the multi-builddir name to always come from $target (the autoconf
+host triplet, e.g. "x86_64-pc-linux-gnu" or "arm-buildroot-linux-gnueabihf"),
+ignoring whatever happens to be in $TARGET env.
+
+Upstream: not submitted (libffi 3.4.6 changed this code path; this patch
+fixes 3.4.4 which is what buildroot 2024.02 ships).
+
+--- a/configure
++++ b/configure
+@@ -3381,7 +3381,7 @@ if test ".$ac_srcdir_defaulted" != ".no" ; then
+   else
+     test ".$ax_enable_builddir" = "."  && ax_enable_builddir="."
+     test ".$ax_enable_builddir" = ".no"  && ax_enable_builddir="."
+-    test ".$TARGET" = "." && TARGET="$target"
++    TARGET="$target"
+     test ".$ax_enable_builddir" = ".auto" && ax_enable_builddir="$TARGET"
+     if test ".$ax_enable_builddir" != ".." ; then    # we know where to go and
+       as_dir=$ax_enable_builddir; as_fn_mkdir_p
