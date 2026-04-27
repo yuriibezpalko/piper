@@ -44,24 +44,32 @@ jobs:
             ca-certificates python3 bison flex gawk perl xxd \
             u-boot-tools device-tree-compiler whiptail
 
+      # libffi's configure script breaks on deeply-nested absolute paths
+      # (the default workspace /home/runner/work/<repo>/<repo>/... is too deep).
+      # Use a short path for build state.
+      - name: Set up short build path
+        run: |
+          sudo mkdir -p /b
+          sudo chown -R $USER:$USER /b
+
       # Cache the OpenIPC clone so we don't re-clone 60MB each run.
       - name: Cache OpenIPC clone
         uses: actions/cache@v4
         with:
-          path: drone-client/drop/.openipc
+          path: /b/openipc
           key: openipc-firmware-${{ hashFiles('.github/workflows/firmware.yml') }}
 
-      # Cache the buildroot tree (toolchain + downloaded sources). This is the
-      # big win — first build ~45min, cached builds ~5–10min.
+      # Cache buildroot output (toolchain + downloads). First build ~45min;
+      # cached ~5–15min.
       - name: Cache buildroot output (toolchain, downloads, build state)
         uses: actions/cache@v4
         with:
           path: |
-            drone-client/drop/output/buildroot-2024.02.10
-            drone-client/drop/output/per-package
-            drone-client/drop/output/build
-            drone-client/drop/output/host
-            drone-client/drop/output/dl
+            /b/output/buildroot-2024.02.10
+            /b/output/per-package
+            /b/output/build
+            /b/output/host
+            /b/output/dl
           key: buildroot-${{ matrix.board }}-${{ hashFiles('drone-client/drop/br-ext-chip-sigmastar/configs/*_defconfig') }}
           restore-keys: |
             buildroot-${{ matrix.board }}-
@@ -69,24 +77,26 @@ jobs:
       - name: Build firmware (BOARD=${{ matrix.board }})
         working-directory: drone-client/drop
         env:
-          JOBS: 4   # GH runners are 2-core but burst well; 4 is sweet spot
+          JOBS: 4
         run: |
-          make BOARD=${{ matrix.board }}
+          make BOARD=${{ matrix.board }} \
+               OPENIPC=/b/openipc \
+               TARGET=/b/output \
+               SKYPULSE_SRC="$GITHUB_WORKSPACE/drone-client"
 
       - name: List artefacts
         if: always()
-        working-directory: drone-client/drop
         run: |
-          ls -lh output/images/ 2>/dev/null || true
+          ls -lh /b/output/images/ 2>/dev/null || true
 
       - name: Upload firmware archive
         uses: actions/upload-artifact@v4
         with:
           name: firmware-${{ matrix.board }}
           path: |
-            drone-client/drop/output/images/openipc.*-fpv.tgz
-            drone-client/drop/output/images/rootfs.*
-            drone-client/drop/output/images/uImage.*
+            /b/output/images/openipc.*-fpv.tgz
+            /b/output/images/rootfs.*
+            /b/output/images/uImage.*
           if-no-files-found: warn
           retention-days: 30
 
@@ -95,9 +105,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-log-${{ matrix.board }}
-          path: |
-            drone-client/drop/output/build/*/.stamp_*
-            drone-client/drop/build.log
+          path: /b/output/build/*/.stamp_*
           if-no-files-found: ignore
           retention-days: 7
 

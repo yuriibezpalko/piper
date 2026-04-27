@@ -13,6 +13,10 @@
 OPENIPC      ?= $(CURDIR)/.openipc
 OPENIPC_REPO  = https://github.com/OpenIPC/firmware.git
 
+# Buildroot output path — short by default to dodge libffi's deep-path bug
+# (CI overrides to /b/output; locally it lives next to the makefile).
+TARGET       ?= $(CURDIR)/output
+
 # main.cpp lives one level up — drone-client/main.cpp.
 SKYPULSE_SRC  ?= $(realpath $(CURDIR)/..)
 SKYPULSE_FILES = $(OPENIPC)/general/package/skypulse/files
@@ -39,9 +43,9 @@ INVOKE = PWD=$(OPENIPC)
 endif
 
 all: stage
-	@cd $(OPENIPC) && $(INVOKE) $(MAKE) TARGET=$(CURDIR)/output \
+	@cd $(OPENIPC) && $(INVOKE) $(MAKE) TARGET=$(TARGET) \
 		$(if $(BOARD),BOARD=$(BOARD)) br-toolchain
-	@cd $(OPENIPC) && $(INVOKE) $(MAKE) TARGET=$(CURDIR)/output \
+	@cd $(OPENIPC) && $(INVOKE) $(MAKE) TARGET=$(TARGET) \
 		$(if $(BOARD),BOARD=$(BOARD))
 
 # Stage: clone upstream, drop our files on top, register Config.in entries.
