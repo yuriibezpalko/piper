@@ -57,23 +57,24 @@ Your VPS is already running **wg-easy**. Network layout:
 
 ### Add camera peer in wg-easy UI
 
-Open wg-easy web UI → Add client → name it `skypulse` → download config.
-You get a `.conf` with the camera private key and VPS public key.
+Open wg-easy web UI → Add client → name it after the camera (e.g. `cam-001`)
+→ download `.conf`. Each camera needs its own client/key — never reuse one
+across multiple cameras.
 
-### Camera — `/etc/wireguard.conf`
-```ini
-[Interface]
-PrivateKey = <from wg-easy download>
+### Provision the camera
 
-[Peer]
-PublicKey    = s8RoICQwmwrkDyIcDPTwWKr3S5yUeUsLMN4WJHarplI=
-PresharedKey = jNroFS2/NwU7Xik/+MeEP54ZlJ9pXidkBqCSHtfr960=
-AllowedIPs   = 10.8.0.0/24
-Endpoint     = <YOUR_VPS_IP>:51820
-PersistentKeepalive = 25
+```bash
+tools/provision-camera.sh <cam-lan-ip> path/to/cam-001.conf
 ```
 
-The `drop/overlay/` files set camera IP to `10.8.0.2` and ping `10.8.0.1` at boot.
+The script parses the wg-easy file, writes `/etc/wireguard.conf` (PrivateKey
++ Peer block) and `/etc/network/interfaces.d/wg0` (with the unique address
+from the wg-easy config), brings up `wg0`, and verifies the handshake by
+pinging `10.8.0.1`. Re-running on the same camera replaces its identity.
+
+The shipped firmware contains placeholder values; provisioning is a
+post-flash, per-camera step. `sysupgrade -z` preserves these files across
+upgrades, so you only do it once per camera.
 
 ### GCS — add peer in wg-easy UI
 
