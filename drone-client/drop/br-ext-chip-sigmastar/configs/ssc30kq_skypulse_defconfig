@@ -66,7 +66,7 @@ BR2_PACKAGE_VTUND_OPENIPC=y
 BR2_PACKAGE_YAML_CLI=y
 
 # Tools
-BR2_PACKAGE_NANO=y
+# BR2_PACKAGE_NANO is not set — 8MB rootfs is tight after MI libs; use busybox vi
 
 # 4G modem
 BR2_PACKAGE_LIBQMI=y
