@@ -38,8 +38,25 @@ USER=${3:-root}
 # WireGuard keys end with '=' (base64 padding) — split on the FIRST '=' only.
 ifield() { awk -v k="$1" '/^\[Interface\]/{i=1;next} /^\[/{i=0} i && $0 ~ "^"k"[ \t]*="{sub(/^[^=]*=[ \t]*/,""); print; exit}' "$CONF"; }
 PRIVATE_KEY=$(ifield PrivateKey)
-ADDRESS=$(ifield Address)
+# wg-easy commonly emits "Address = 10.8.0.2/32, fdcc::cafe:2/128" — pick the v4.
+ADDRESS=$(ifield Address | tr ',' '\n' | awk '/^[ \t]*[0-9]+\./{gsub(/^[ \t]+|[ \t]+$/,""); print; exit}')
 PEER_BLOCK=$(awk '/^\[Peer\]/{p=1} p{print}' "$CONF")
+
+# wg-easy bakes the VPS hostname into Endpoint. Pre-resolve it here so the
+# camera (which may have no DNS / no internet on its LAN side) doesn't have
+# to. Without this, `wg setconf` spins forever on EAI_AGAIN.
+ENDPOINT=$(echo "$PEER_BLOCK" | awk -F'= *' '/^Endpoint/{print $2; exit}' | tr -d '[:space:]')
+HOST=${ENDPOINT%:*}
+PORT=${ENDPOINT##*:}
+if [[ -n $HOST && ! $HOST =~ ^[0-9.]+$ && ! $HOST =~ : ]]; then
+    IP=$(dig +short "$HOST" A | grep -E '^[0-9.]+$' | head -1)
+    if [[ -n $IP ]]; then
+        echo "→ resolved Endpoint $HOST → $IP"
+        PEER_BLOCK=$(echo "$PEER_BLOCK" | sed -E "s|^(Endpoint[ \t]*=).*|\1 $IP:$PORT|")
+    else
+        echo "warn: couldn't resolve $HOST; camera will need DNS to bring up wg0" >&2
+    fi
+fi
 
 [[ -n $PRIVATE_KEY ]] || { echo "no PrivateKey found in $CONF" >&2; exit 1; }
 [[ -n $ADDRESS ]]     || { echo "no Address found in $CONF" >&2; exit 1; }
@@ -77,10 +94,17 @@ EOF
 
 # ── Ship and apply ────────────────────────────────────────────────────────────
 echo "→ pushing config to $USER@$CAM_IP (wg ip $WG_IP/$WG_CIDR)"
-scp -q "$TMP/wireguard.conf" "$USER@$CAM_IP:/etc/wireguard.conf"
-scp -q "$TMP/wg0"            "$USER@$CAM_IP:/etc/network/interfaces.d/wg0"
+# -O = legacy SCP protocol; OpenIPC's dropbear has no sftp-server.
+scp -qO "$TMP/wireguard.conf" "$USER@$CAM_IP:/etc/wireguard.conf"
+scp -qO "$TMP/wg0"            "$USER@$CAM_IP:/etc/network/interfaces.d/wg0"
 
-ssh "$USER@$CAM_IP" "chmod 600 /etc/wireguard.conf && ifdown wg0 2>/dev/null; ifup wg0"
+ssh "$USER@$CAM_IP" "chmod 600 /etc/wireguard.conf
+# Belt-and-suspenders teardown: kill stuck wg setconf retries from a previous
+# failed run, drop any lingering wg0 link, then bring it up cleanly.
+killall -9 wg 2>/dev/null
+ifdown wg0 2>/dev/null
+ip link del wg0 2>/dev/null
+ifup wg0"
 
 echo "→ verifying handshake to 10.8.0.1"
 if ssh "$USER@$CAM_IP" 'for i in $(seq 1 10); do ping -c1 -W1 10.8.0.1 >/dev/null 2>&1 && exit 0; sleep 1; done; exit 1'; then
