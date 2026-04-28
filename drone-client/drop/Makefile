@@ -75,12 +75,19 @@ stage: prepare
 	# fpv majestic doesn't link them itself — so they go nowhere. Drop
 	# them straight into the rootfs overlay; that runs after package install
 	# so it can't be short-circuited by per-package stamp caches.
+	# Strip them: SSC30KQ rootfs partition is 8MB and the unstripped vendor
+	# blobs push it over.
 	@echo "--- baking SigmaStar MI libs into overlay/usr/lib ---"
 	@mkdir -p $(OPENIPC)/general/overlay/usr/lib
 	@cp -f $(OPENIPC)/general/package/sigmastar-osdrv-infinity6e/files/lib/libcam_os_wrapper.so \
 	       $(OPENIPC)/general/package/sigmastar-osdrv-infinity6e/files/lib/libmi_rgn.so \
 	       $(OPENIPC)/general/package/sigmastar-osdrv-infinity6e/files/lib/libmi_sys.so \
 	       $(OPENIPC)/general/overlay/usr/lib/
+	@strip --strip-unneeded \
+	       $(OPENIPC)/general/overlay/usr/lib/libcam_os_wrapper.so \
+	       $(OPENIPC)/general/overlay/usr/lib/libmi_rgn.so \
+	       $(OPENIPC)/general/overlay/usr/lib/libmi_sys.so 2>/dev/null || \
+	       echo "warn: host strip failed (non-ARM-aware); rootfs may overflow"
 	@echo "--- patching upstream Makefile: -j\$$(shell nproc) -> -j$(JOBS) ---"
 	@sed -i 's|-j\$$(shell nproc)|-j$(JOBS)|g' $(OPENIPC)/Makefile
 ifeq ($(SAFE_MODE),1)
