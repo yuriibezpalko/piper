@@ -53,11 +53,6 @@ all: stage
 	@rm -rf $(TARGET)/build/libffi-3.4.4 $(TARGET)/build/host-libffi-3.4.4
 	@cd $(OPENIPC) && $(INVOKE) $(MAKE) TARGET=$(TARGET) \
 		$(if $(BOARD),BOARD=$(BOARD)) br-toolchain
-	# msposd-prebuilt's recipe is iterated locally; force re-install so .mk
-	# edits (e.g. extra files copied to TARGET_DIR) actually take effect on
-	# warm CI caches that otherwise short-circuit on stamp_target_installed.
-	@cd $(OPENIPC) && $(INVOKE) $(MAKE) TARGET=$(TARGET) \
-		$(if $(BOARD),BOARD=$(BOARD)) msposd-prebuilt-dirclean 2>/dev/null || true
 	@cd $(OPENIPC) && $(INVOKE) $(MAKE) TARGET=$(TARGET) \
 		$(if $(BOARD),BOARD=$(BOARD))
 
@@ -75,6 +70,17 @@ stage: prepare
 		grep -q "package/$$pkg/Config.in" $(PKG_CONFIG_IN) || \
 		echo "source \"\$$BR2_EXTERNAL_GENERAL_PATH/package/$$pkg/Config.in\"" >> $(PKG_CONFIG_IN); \
 	done
+	# msposd_star6e links libcam_os_wrapper / libmi_rgn / libmi_sys. The
+	# OSDRV package only installs them when majestic is disabled, and the
+	# fpv majestic doesn't link them itself — so they go nowhere. Drop
+	# them straight into the rootfs overlay; that runs after package install
+	# so it can't be short-circuited by per-package stamp caches.
+	@echo "--- baking SigmaStar MI libs into overlay/usr/lib ---"
+	@mkdir -p $(OPENIPC)/general/overlay/usr/lib
+	@cp -f $(OPENIPC)/general/package/sigmastar-osdrv-infinity6e/files/lib/libcam_os_wrapper.so \
+	       $(OPENIPC)/general/package/sigmastar-osdrv-infinity6e/files/lib/libmi_rgn.so \
+	       $(OPENIPC)/general/package/sigmastar-osdrv-infinity6e/files/lib/libmi_sys.so \
+	       $(OPENIPC)/general/overlay/usr/lib/
 	@echo "--- patching upstream Makefile: -j\$$(shell nproc) -> -j$(JOBS) ---"
 	@sed -i 's|-j\$$(shell nproc)|-j$(JOBS)|g' $(OPENIPC)/Makefile
 ifeq ($(SAFE_MODE),1)
