@@ -53,6 +53,11 @@ all: stage
 	@rm -rf $(TARGET)/build/libffi-3.4.4 $(TARGET)/build/host-libffi-3.4.4
 	@cd $(OPENIPC) && $(INVOKE) $(MAKE) TARGET=$(TARGET) \
 		$(if $(BOARD),BOARD=$(BOARD)) br-toolchain
+	# msposd-prebuilt's recipe is iterated locally; force re-install so .mk
+	# edits (e.g. extra files copied to TARGET_DIR) actually take effect on
+	# warm CI caches that otherwise short-circuit on stamp_target_installed.
+	@cd $(OPENIPC) && $(INVOKE) $(MAKE) TARGET=$(TARGET) \
+		$(if $(BOARD),BOARD=$(BOARD)) msposd-prebuilt-dirclean 2>/dev/null || true
 	@cd $(OPENIPC) && $(INVOKE) $(MAKE) TARGET=$(TARGET) \
 		$(if $(BOARD),BOARD=$(BOARD))
 
