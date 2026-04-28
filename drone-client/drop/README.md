@@ -15,6 +15,7 @@ of a clone of `OpenIPC/firmware`, and upstream's Makefile drives the build.
 | INAV fonts | downloaded by `msposd-prebuilt.mk` | `/usr/share/fonts/font.png`, `font_hd.png` |
 | `S96msposd` init | `general/package/msposd/files/` | `/etc/init.d/S96msposd` |
 | `msposd.conf` | `general/package/msposd/files/` | `/etc/msposd.conf` |
+| SigmaStar MI/MPP libs (msposd deps) | copied at `make stage` from upstream OSDRV pkg | `/usr/lib/libcam_os_wrapper.so`, `libmi_rgn.so`, `libmi_sys.so` |
 | `wireguard.conf` (placeholder) | `general/overlay/etc/` | `/etc/wireguard.conf` |
 | `wg0` / `wwan0` interface defs | `general/overlay/etc/network/interfaces.d/` | same path |
 | `rc.local` boot orchestration | `general/overlay/etc/` | `/etc/rc.local` |
